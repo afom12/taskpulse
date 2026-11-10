@@ -1,0 +1,67 @@
+rules_version = '2';
+
+// Security lives HERE, not in the UI. Hiding a button is not security —
+// anyone can call Firestore from the browser console. These rules are
+// enforced by Google's servers on every single read and write.
+service cloud.firestore {
+  match /databases/{db}/documents {
+
+    function signedIn() { return request.auth != null; }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(db)/documents/users/$(request.auth.uid))
+        && get(/databases/$(db)/documents/users/$(request.auth.uid)).data.role == "admin";
+    }
+
+    function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+
+    // ---------- USERS ----------
+    match /users/{uid} {
+      allow read: if signedIn();
+      // You can only create your own profile, and only as a normal user.
+      allow create: if signedIn() && request.auth.uid == uid
+                    && request.resource.data.role == "user";
+      // You can edit your own profile but never your own role.
+      // Telegram chat id is set by the server; you may only clear it (unlink).
+      allow update: if isAdmin()
+                    || (request.auth.uid == uid
+                        && !changed().hasAny(["role"])
+                        && (!changed().hasAny(["telegramChatId"]) || request.resource.data.telegramChatId == null));
+      allow delete: if isAdmin();
+    }
+
+    // ---------- TASKS ----------
+    match /tasks/{taskId} {
+      function isAssignee() { return signedIn() && resource.data.assigneeId == request.auth.uid; }
+
+      allow read: if isAdmin() || isAssignee();
+      allow create, delete: if isAdmin();
+      // Admins can change anything. The assignee can only move the task
+      // forward (start / submit) and only touch these fields.
+      allow update: if isAdmin()
+                    || (isAssignee()
+                        && changed().hasOnly(["status", "submission", "history", "updatedAt"])
+                        && request.resource.data.status in ["in_progress", "submitted"]);
+
+      match /comments/{commentId} {
+        function canAccessTask() {
+          return isAdmin()
+            || get(/databases/$(db)/documents/tasks/$(taskId)).data.assigneeId == request.auth.uid;
+        }
+        allow read: if signedIn() && canAccessTask();
+        allow create: if signedIn() && canAccessTask()
+                      && request.resource.data.authorId == request.auth.uid;
+        allow delete: if isAdmin();
+      }
+    }
+
+    // ---------- NOTIFICATIONS ----------
+    match /notifications/{id} {
+      allow read, delete: if signedIn() && resource.data.userId == request.auth.uid;
+      allow create: if signedIn() && request.resource.data.fromId == request.auth.uid;
+      allow update: if signedIn() && resource.data.userId == request.auth.uid
+                    && changed().hasOnly(["read"]);
+    }
+  }
+}

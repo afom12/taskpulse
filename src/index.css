@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  @apply bg-slate-50 text-slate-800 antialiased;
+}
+
+/* subtle scrollbars */
+* { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+
+.recharts-wrapper, .recharts-surface { outline: none; }
+.recharts-wrapper *:focus { outline: none; }
+
+@keyframes pop-in { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: none; } }
+.animate-pop { animation: pop-in .18s ease-out; }
+
+.bg-overdue-stripes {
+  background-image: repeating-linear-gradient(135deg, rgba(244,63,94,.10) 0 6px, transparent 6px 12px);
+}
